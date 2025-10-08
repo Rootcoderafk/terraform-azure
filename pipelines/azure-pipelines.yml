@@ -1,0 +1,252 @@
+# Azure DevOps Pipeline for Terraform Infrastructure Deployment
+# Supports multiple environments and cloud providers
+
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+  paths:
+    include:
+      - terraform-infrastructure/**
+
+parameters:
+  - name: environment
+    displayName: 'Environment'
+    type: string
+    default: 'dev'
+    values:
+      - dev
+      - staging
+      - prod
+  
+  - name: cloud_provider
+    displayName: 'Cloud Provider'
+    type: string
+    default: 'azure'
+    values:
+      - azure
+      - aws
+      - both
+  
+  - name: action
+    displayName: 'Terraform Action'
+    type: string
+    default: 'plan'
+    values:
+      - plan
+      - apply
+      - destroy
+
+variables:
+  - name: terraformVersion
+    value: '1.5.0'
+  - name: workingDirectory
+    value: '$(System.DefaultWorkingDirectory)/terraform-infrastructure/environments/${{ parameters.environment }}'
+  - name: enableAzure
+    value: ${{ or(eq(parameters.cloud_provider, 'azure'), eq(parameters.cloud_provider, 'both')) }}
+  - name: enableAws
+    value: ${{ or(eq(parameters.cloud_provider, 'aws'), eq(parameters.cloud_provider, 'both')) }}
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  - stage: Validate
+    displayName: 'Validate Configuration'
+    jobs:
+      - job: ValidateJob
+        displayName: 'Validate Terraform'
+        steps:
+          - checkout: self
+            displayName: '📥 Checkout code'
+          
+          - task: TerraformInstaller@0
+            displayName: '🔧 Install Terraform'
+            inputs:
+              terraformVersion: $(terraformVersion)
+          
+          - task: AzureCLI@2
+            displayName: '🔑 Azure Login'
+            condition: eq(variables.enableAzure, true)
+            inputs:
+              azureSubscription: 'azure-service-connection'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                echo "✅ Authenticated with Azure"
+                az account show
+          
+          - task: TerraformTaskV4@4
+            displayName: '🚀 Terraform Init'
+            inputs:
+              provider: 'azurerm'
+              command: 'init'
+              workingDirectory: $(workingDirectory)
+              backendServiceArm: 'azure-service-connection'
+              backendAzureRmResourceGroupName: 'terraform-state-rg'
+              backendAzureRmStorageAccountName: 'tfstate9851838'
+              backendAzureRmContainerName: 'tfstate'
+              backendAzureRmKey: '${{ parameters.environment }}.terraform.tfstate'
+          
+          - task: TerraformTaskV4@4
+            displayName: '✅ Terraform Validate'
+            inputs:
+              provider: 'azurerm'
+              command: 'validate'
+              workingDirectory: $(workingDirectory)
+
+  - stage: Plan
+    displayName: 'Plan Changes'
+    dependsOn: Validate
+    condition: succeeded()
+    jobs:
+      - job: PlanJob
+        displayName: 'Terraform Plan'
+        steps:
+          - checkout: self
+            displayName: '📥 Checkout code'
+          
+          - task: TerraformInstaller@0
+            displayName: '🔧 Install Terraform'
+            inputs:
+              terraformVersion: $(terraformVersion)
+          
+          - task: TerraformTaskV4@4
+            displayName: '🚀 Terraform Init'
+            inputs:
+              provider: 'azurerm'
+              command: 'init'
+              workingDirectory: $(workingDirectory)
+              backendServiceArm: 'azure-service-connection'
+              backendAzureRmResourceGroupName: 'terraform-state-rg'
+              backendAzureRmStorageAccountName: 'tfstate9851838'
+              backendAzureRmContainerName: 'tfstate'
+              backendAzureRmKey: '${{ parameters.environment }}.terraform.tfstate'
+          
+          - task: TerraformTaskV4@4
+            displayName: '📝 Terraform Plan'
+            inputs:
+              provider: 'azurerm'
+              command: 'plan'
+              workingDirectory: $(workingDirectory)
+              commandOptions: |
+                -var="enable_azure=$(enableAzure)" \
+                -var="enable_aws=$(enableAws)" \
+                -var-file=terraform.tfvars \
+                -out=tfplan
+              environmentServiceNameAzureRM: 'azure-service-connection'
+          
+          - task: PublishPipelineArtifact@1
+            displayName: '📦 Publish Plan'
+            inputs:
+              targetPath: '$(workingDirectory)/tfplan'
+              artifact: 'terraform-plan-${{ parameters.environment }}'
+              publishLocation: 'pipeline'
+
+  - stage: Apply
+    displayName: 'Apply Changes'
+    dependsOn: Plan
+    condition: |
+      and(
+        succeeded(),
+        eq('${{ parameters.action }}', 'apply')
+      )
+    jobs:
+      - deployment: ApplyJob
+        displayName: 'Terraform Apply'
+        environment: '${{ parameters.environment }}'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  displayName: '📥 Checkout code'
+                
+                - task: TerraformInstaller@0
+                  displayName: '🔧 Install Terraform'
+                  inputs:
+                    terraformVersion: $(terraformVersion)
+                
+                - task: DownloadPipelineArtifact@2
+                  displayName: '📥 Download Plan'
+                  inputs:
+                    artifact: 'terraform-plan-${{ parameters.environment }}'
+                    path: $(workingDirectory)
+                
+                - task: TerraformTaskV4@4
+                  displayName: '🚀 Terraform Init'
+                  inputs:
+                    provider: 'azurerm'
+                    command: 'init'
+                    workingDirectory: $(workingDirectory)
+                    backendServiceArm: 'azure-service-connection'
+                    backendAzureRmResourceGroupName: 'terraform-state-rg'
+                    backendAzureRmStorageAccountName: 'tfstate9851838'
+                    backendAzureRmContainerName: 'tfstate'
+                    backendAzureRmKey: '${{ parameters.environment }}.terraform.tfstate'
+                
+                - task: TerraformTaskV4@4
+                  displayName: '🚀 Terraform Apply'
+                  inputs:
+                    provider: 'azurerm'
+                    command: 'apply'
+                    workingDirectory: $(workingDirectory)
+                    commandOptions: 'tfplan'
+                    environmentServiceNameAzureRM: 'azure-service-connection'
+                
+                - task: TerraformTaskV4@4
+                  displayName: '📊 Terraform Output'
+                  inputs:
+                    provider: 'azurerm'
+                    command: 'output'
+                    workingDirectory: $(workingDirectory)
+
+  - stage: Destroy
+    displayName: 'Destroy Infrastructure'
+    dependsOn: []
+    condition: |
+      and(
+        succeeded(),
+        eq('${{ parameters.action }}', 'destroy')
+      )
+    jobs:
+      - deployment: DestroyJob
+        displayName: 'Terraform Destroy'
+        environment: '${{ parameters.environment }}-destroy'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  displayName: '📥 Checkout code'
+                
+                - task: TerraformInstaller@0
+                  displayName: '🔧 Install Terraform'
+                  inputs:
+                    terraformVersion: $(terraformVersion)
+                
+                - task: TerraformTaskV4@4
+                  displayName: '🚀 Terraform Init'
+                  inputs:
+                    provider: 'azurerm'
+                    command: 'init'
+                    workingDirectory: $(workingDirectory)
+                    backendServiceArm: 'azure-service-connection'
+                    backendAzureRmResourceGroupName: 'terraform-state-rg'
+                    backendAzureRmStorageAccountName: 'tfstate9851838'
+                    backendAzureRmContainerName: 'tfstate'
+                    backendAzureRmKey: '${{ parameters.environment }}.terraform.tfstate'
+                
+                - task: TerraformTaskV4@4
+                  displayName: '💥 Terraform Destroy'
+                  inputs:
+                    provider: 'azurerm'
+                    command: 'destroy'
+                    workingDirectory: $(workingDirectory)
+                    commandOptions: |
+                      -var="enable_azure=$(enableAzure)" \
+                      -var="enable_aws=$(enableAws)" \
+                      -var-file=terraform.tfvars \
+                      -auto-approve
+                    environmentServiceNameAzureRM: 'azure-service-connection'

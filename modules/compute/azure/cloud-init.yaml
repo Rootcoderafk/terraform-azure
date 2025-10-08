@@ -1,0 +1,216 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+
+packages:
+  - docker.io
+  - docker-compose
+  - git
+  - curl
+
+runcmd:
+  # Start and enable Docker
+  - systemctl start docker
+  - systemctl enable docker
+  
+  # Add azureuser to docker group
+  - usermod -aG docker azureuser
+  
+  # Create directory for NGINX configuration
+  - mkdir -p /opt/nginx-app
+  - mkdir -p /opt/nginx-app/certs
+  - mkdir -p /opt/nginx-app/conf
+  
+  # Generate self-signed SSL certificate
+  - |
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+      -keyout /opt/nginx-app/certs/key.pem \
+      -out /opt/nginx-app/certs/cert.pem \
+      -subj "/C=US/ST=State/L=City/O=Organization/CN=${environment}.example.com"
+  
+  # Create NGINX configuration
+  - |
+    cat > /opt/nginx-app/conf/nginx.conf <<'EOF'
+    user nginx;
+    worker_processes auto;
+    error_log /var/log/nginx/error.log;
+    pid /run/nginx.pid;
+
+    events {
+        worker_connections 1024;
+    }
+
+    http {
+        log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                        '$status $body_bytes_sent "$http_referer" '
+                        '"$http_user_agent" "$http_x_forwarded_for"';
+
+        access_log /var/log/nginx/access.log main;
+
+        sendfile            on;
+        tcp_nopush          on;
+        tcp_nodelay         on;
+        keepalive_timeout   65;
+        types_hash_max_size 2048;
+
+        include             /etc/nginx/mime.types;
+        default_type        application/octet-stream;
+
+        # Redirect HTTP to HTTPS
+        server {
+            listen 80;
+            server_name _;
+            return 301 https://$host$request_uri;
+        }
+
+        # HTTPS Server
+        server {
+            listen 443 ssl;
+            server_name _;
+
+            ssl_certificate /etc/nginx/certs/cert.pem;
+            ssl_certificate_key /etc/nginx/certs/key.pem;
+            ssl_protocols TLSv1.2 TLSv1.3;
+            ssl_ciphers HIGH:!aNULL:!MD5;
+
+            location / {
+                root   /usr/share/nginx/html;
+                index  index.html index.htm;
+            }
+
+            location /health {
+                access_log off;
+                return 200 "healthy\n";
+                add_header Content-Type text/plain;
+            }
+
+            error_page 404 /404.html;
+            location = /404.html {
+                root /usr/share/nginx/html;
+            }
+
+            error_page 500 502 503 504 /50x.html;
+            location = /50x.html {
+                root /usr/share/nginx/html;
+            }
+        }
+    }
+    EOF
+  
+  # Create index.html
+  - |
+    cat > /opt/nginx-app/index.html <<'EOF'
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>NGINX Server - ${environment}</title>
+        <style>
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+            }
+            .container {
+                background: white;
+                padding: 3rem;
+                border-radius: 10px;
+                box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+                text-align: center;
+            }
+            h1 {
+                color: #667eea;
+                margin-bottom: 1rem;
+            }
+            .badge {
+                display: inline-block;
+                background: #667eea;
+                color: white;
+                padding: 0.5rem 1rem;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            .info {
+                margin-top: 2rem;
+                color: #666;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🚀 NGINX Server Running</h1>
+            <div class="badge">Environment: ${environment}</div>
+            <div class="info">
+                <p>✅ HTTPS Enabled</p>
+                <p>✅ Docker Containerized</p>
+                <p>✅ Azure Application Gateway</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    EOF
+  
+  # Create Dockerfile
+  - |
+    cat > /opt/nginx-app/Dockerfile <<'EOF'
+    FROM nginx:alpine
+
+    # Copy SSL certificates
+    COPY certs/ /etc/nginx/certs/
+
+    # Copy NGINX configuration
+    COPY conf/nginx.conf /etc/nginx/nginx.conf
+
+    # Copy web content
+    COPY index.html /usr/share/nginx/html/
+
+    # Expose ports
+    EXPOSE 80 443
+
+    CMD ["nginx", "-g", "daemon off;"]
+    EOF
+  
+  # Build and run Docker container
+  - cd /opt/nginx-app
+  - docker build -t nginx-ssl:latest .
+  - docker run -d --name nginx-app --restart always -p 80:80 -p 443:443 nginx-ssl:latest
+  
+  # Set up log rotation
+  - |
+    cat > /etc/logrotate.d/nginx-docker <<'EOF'
+    /var/lib/docker/containers/*/*.log {
+        rotate 7
+        daily
+        compress
+        delaycompress
+        missingok
+        notifempty
+        copytruncate
+    }
+    EOF
+
+write_files:
+  - path: /etc/systemd/system/nginx-app.service
+    content: |
+      [Unit]
+      Description=NGINX Docker Container
+      After=docker.service
+      Requires=docker.service
+
+      [Service]
+      TimeoutStartSec=0
+      Restart=always
+      ExecStartPre=-/usr/bin/docker stop nginx-app
+      ExecStartPre=-/usr/bin/docker rm nginx-app
+      ExecStart=/usr/bin/docker run --name nginx-app -p 80:80 -p 443:443 nginx-ssl:latest
+      ExecStop=/usr/bin/docker stop nginx-app
+
+      [Install]
+      WantedBy=multi-user.target
+
+final_message: "NGINX Docker container setup complete!"
