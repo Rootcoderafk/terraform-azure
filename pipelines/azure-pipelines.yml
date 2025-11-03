@@ -59,7 +59,7 @@ stages:
         displayName: 'Validate Terraform'
         steps:
           - checkout: self
-            displayName: '📥 Checkout code'
+            displayName: ' Checkout code'
           
           - task: TerraformInstaller@0
             displayName: '🔧 Install Terraform'
@@ -67,18 +67,18 @@ stages:
               terraformVersion: $(terraformVersion)
           
           - task: AzureCLI@2
-            displayName: '🔑 Azure Login'
+            displayName: ' Azure Login'
             condition: eq(variables.enableAzure, true)
             inputs:
               azureSubscription: 'azure-service-connection'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               inlineScript: |
-                echo "✅ Authenticated with Azure"
+                echo "Authenticated with Azure"
                 az account show
           
           - task: TerraformTaskV4@4
-            displayName: '🚀 Terraform Init'
+            displayName: 'Terraform Init'
             inputs:
               provider: 'azurerm'
               command: 'init'
@@ -90,7 +90,7 @@ stages:
               backendAzureRmKey: '${{ parameters.environment }}.terraform.tfstate'
           
           - task: TerraformTaskV4@4
-            displayName: '✅ Terraform Validate'
+            displayName: ' Terraform Validate'
             inputs:
               provider: 'azurerm'
               command: 'validate'
@@ -105,7 +105,7 @@ stages:
         displayName: 'Terraform Plan'
         steps:
           - checkout: self
-            displayName: '📥 Checkout code'
+            displayName: ' Checkout code'
           
           - task: TerraformInstaller@0
             displayName: '🔧 Install Terraform'
@@ -113,7 +113,7 @@ stages:
               terraformVersion: $(terraformVersion)
           
           - task: TerraformTaskV4@4
-            displayName: '🚀 Terraform Init'
+            displayName: ' Terraform Init'
             inputs:
               provider: 'azurerm'
               command: 'init'
@@ -125,7 +125,7 @@ stages:
               backendAzureRmKey: '${{ parameters.environment }}.terraform.tfstate'
           
           - task: TerraformTaskV4@4
-            displayName: '📝 Terraform Plan'
+            displayName: 'Terraform Plan'
             inputs:
               provider: 'azurerm'
               command: 'plan'
@@ -138,7 +138,7 @@ stages:
               environmentServiceNameAzureRM: 'azure-service-connection'
           
           - task: PublishPipelineArtifact@1
-            displayName: '📦 Publish Plan'
+            displayName: 'Publish Plan'
             inputs:
               targetPath: '$(workingDirectory)/tfplan'
               artifact: 'terraform-plan-${{ parameters.environment }}'
@@ -161,7 +161,7 @@ stages:
             deploy:
               steps:
                 - checkout: self
-                  displayName: '📥 Checkout code'
+                  displayName: 'Checkout code'
                 
                 - task: TerraformInstaller@0
                   displayName: '🔧 Install Terraform'
@@ -169,13 +169,13 @@ stages:
                     terraformVersion: $(terraformVersion)
                 
                 - task: DownloadPipelineArtifact@2
-                  displayName: '📥 Download Plan'
+                  displayName: 'Download Plan'
                   inputs:
                     artifact: 'terraform-plan-${{ parameters.environment }}'
                     path: $(workingDirectory)
                 
                 - task: TerraformTaskV4@4
-                  displayName: '🚀 Terraform Init'
+                  displayName: 'Terraform Init'
                   inputs:
                     provider: 'azurerm'
                     command: 'init'
@@ -187,7 +187,7 @@ stages:
                     backendAzureRmKey: '${{ parameters.environment }}.terraform.tfstate'
                 
                 - task: TerraformTaskV4@4
-                  displayName: '🚀 Terraform Apply'
+                  displayName: 'Terraform Apply'
                   inputs:
                     provider: 'azurerm'
                     command: 'apply'
@@ -196,7 +196,7 @@ stages:
                     environmentServiceNameAzureRM: 'azure-service-connection'
                 
                 - task: TerraformTaskV4@4
-                  displayName: '📊 Terraform Output'
+                  displayName: 'Terraform Output'
                   inputs:
                     provider: 'azurerm'
                     command: 'output'
@@ -219,7 +219,7 @@ stages:
             deploy:
               steps:
                 - checkout: self
-                  displayName: '📥 Checkout code'
+                  displayName: 'Checkout code'
                 
                 - task: TerraformInstaller@0
                   displayName: '🔧 Install Terraform'
@@ -227,7 +227,7 @@ stages:
                     terraformVersion: $(terraformVersion)
                 
                 - task: TerraformTaskV4@4
-                  displayName: '🚀 Terraform Init'
+                  displayName: 'Terraform Init'
                   inputs:
                     provider: 'azurerm'
                     command: 'init'
@@ -239,7 +239,7 @@ stages:
                     backendAzureRmKey: '${{ parameters.environment }}.terraform.tfstate'
                 
                 - task: TerraformTaskV4@4
-                  displayName: '💥 Terraform Destroy'
+                  displayName: 'Terraform Destroy'
                   inputs:
                     provider: 'azurerm'
                     command: 'destroy'
