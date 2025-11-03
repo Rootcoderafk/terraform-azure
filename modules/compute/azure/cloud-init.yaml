@@ -143,12 +143,12 @@ runcmd:
     </head>
     <body>
         <div class="container">
-            <h1>🚀 NGINX Server Running</h1>
+            <h1>NGINX Server Running</h1>
             <div class="badge">Environment: ${environment}</div>
             <div class="info">
-                <p>✅ HTTPS Enabled</p>
-                <p>✅ Docker Containerized</p>
-                <p>✅ Azure Application Gateway</p>
+                <p>HTTPS Enabled</p>
+                <p>Docker Containerized</p>
+                <p>Azure Application Gateway</p>
             </div>
         </div>
     </body>
