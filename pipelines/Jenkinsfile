@@ -46,7 +46,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                echo "🔄 Checking out code..."
+                echo " Checking out code..."
                 checkout scm
             }
         }
@@ -54,12 +54,12 @@ pipeline {
         stage('Validate Parameters') {
             steps {
                 script {
-                    echo "📋 Environment: ${params.ENVIRONMENT}"
-                    echo "☁️  Cloud Provider: ${params.CLOUD_PROVIDER}"
-                    echo "⚙️  Action: ${params.ACTION}"
+                    echo " Environment: ${params.ENVIRONMENT}"
+                    echo "  Cloud Provider: ${params.CLOUD_PROVIDER}"
+                    echo "  Action: ${params.ACTION}"
                     
                     if (params.ACTION == 'destroy' && params.ENVIRONMENT == 'prod') {
-                        error('❌ Destroying production infrastructure requires manual approval')
+                        error(' Destroying production infrastructure requires manual approval')
                     }
                 }
             }
@@ -68,7 +68,7 @@ pipeline {
         stage('Setup Terraform') {
             steps {
                 script {
-                    echo "🔧 Setting up Terraform..."
+                    echo " Setting up Terraform..."
                     sh """
                         if ! command -v terraform &> /dev/null; then
                             wget https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip
@@ -84,7 +84,7 @@ pipeline {
         stage('Terraform Init') {
             steps {
                 dir("terraform-infrastructure/environments/${params.ENVIRONMENT}") {
-                    echo "🚀 Initializing Terraform..."
+                    echo " Initializing Terraform..."
                     sh """
                         terraform init -upgrade
                     """
@@ -95,7 +95,7 @@ pipeline {
         stage('Terraform Validate') {
             steps {
                 dir("terraform-infrastructure/environments/${params.ENVIRONMENT}") {
-                    echo "✅ Validating Terraform configuration..."
+                    echo "Validating Terraform configuration..."
                     sh """
                         terraform validate
                     """
@@ -110,7 +110,7 @@ pipeline {
             steps {
                 dir("terraform-infrastructure/environments/${params.ENVIRONMENT}") {
                     script {
-                        echo "📝 Planning Terraform changes..."
+                        echo "Planning Terraform changes..."
                         
                         def enableAzure = params.CLOUD_PROVIDER in ['azure', 'both']
                         def enableAws = params.CLOUD_PROVIDER in ['aws', 'both']
@@ -138,15 +138,15 @@ pipeline {
                 dir("terraform-infrastructure/environments/${params.ENVIRONMENT}") {
                     script {
                         if (params.AUTO_APPROVE) {
-                            echo "🚀 Applying Terraform changes (auto-approved)..."
+                            echo " Applying Terraform changes (auto-approved)..."
                             sh """
                                 terraform apply -auto-approve tfplan
                             """
                         } else {
-                            echo "⏸️  Waiting for manual approval..."
+                            echo " Waiting for manual approval..."
                             input message: 'Approve terraform apply?', ok: 'Apply'
                             
-                            echo "🚀 Applying Terraform changes..."
+                            echo " Applying Terraform changes..."
                             sh """
                                 terraform apply tfplan
                             """
@@ -163,7 +163,7 @@ pipeline {
             steps {
                 dir("terraform-infrastructure/environments/${params.ENVIRONMENT}") {
                     script {
-                        echo "⚠️  WARNING: Destroying infrastructure..."
+                        echo " WARNING: Destroying infrastructure..."
                         
                         if (params.ENVIRONMENT == 'prod') {
                             input message: 'Are you ABSOLUTELY SURE you want to destroy PRODUCTION?', ok: 'Yes, Destroy'
@@ -190,7 +190,7 @@ pipeline {
             }
             steps {
                 dir("terraform-infrastructure/environments/${params.ENVIRONMENT}") {
-                    echo "📊 Terraform outputs..."
+                    echo "Terraform outputs..."
                     sh """
                         terraform output
                     """
@@ -201,7 +201,7 @@ pipeline {
     
     post {
         success {
-            echo "✅ Pipeline completed successfully!"
+            echo " Pipeline completed successfully!"
             script {
                 if (params.ACTION == 'apply') {
                     dir("terraform-infrastructure/environments/${params.ENVIRONMENT}") {
@@ -210,16 +210,16 @@ pipeline {
                             returnStdout: true
                         ).trim()
                         
-                        echo "📋 Deployment Outputs:\n${outputs}"
+                        echo " Deployment Outputs:\n${outputs}"
                     }
                 }
             }
         }
         failure {
-            echo "❌ Pipeline failed!"
+            echo " Pipeline failed!"
         }
         always {
-            echo "🧹 Cleaning up..."
+            echo " Cleaning up..."
             cleanWs()
         }
     }
